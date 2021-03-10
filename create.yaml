@@ -1,0 +1,67 @@
+---
+- hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Create new incident
+      servicenow.itsm.incident:
+        caller: admin
+        state: new
+        short_description: Demo incident
+        impact: low
+        urgency: low
+      register: incident
+
+    - ansible.builtin.pause:
+
+    - name: Create a problem from incident
+      servicenow.itsm.problem:
+        short_description: Demo problem
+      register: problem
+
+    - name: Update incident with a problem information
+      servicenow.itsm.incident:
+        number: "{{ incident.record.number }}"
+        state: in_progress
+        other:
+          problem_id: "{{ problem.record.sys_id }}"
+
+    - ansible.builtin.pause:
+
+    - name: Assign problem for assessment
+      servicenow.itsm.problem:
+        sys_id: "{{ problem.record.sys_id }}"
+        state: assess
+        assigned_to: problem.manager
+
+    - ansible.builtin.pause:
+
+    - name: Create change request for resolving a problem
+      servicenow.itsm.change_request:
+        state: new
+        type: standard
+        short_description: Demo change request
+        template: Clear BGP sessions on a Cisco router - 1
+        other:
+          parent: "{{ problem.record.sys_id }}"
+      register: change
+
+    - name: Mark the problem for root cause analysis
+      servicenow.itsm.problem:
+        number: "{{ problem.record.number }}"
+        state: root_cause_analysis
+        cause_notes: Write the analysis notes here. The more, the better ;)
+        other:
+          rfc: "{{ change.record.sys_id }}"
+
+    - ansible.builtin.pause:
+
+    - name: Start fixing the problem
+      servicenow.itsm.problem:
+        sys_id: "{{ problem.record.sys_id }}"
+        state: fix_in_progress
+        fix_notes: Detailed fix description here.
+
+    - name: Output change request number for reference
+      ansible.builtin.debug:
+        var: change.record.number

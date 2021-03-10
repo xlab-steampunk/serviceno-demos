@@ -1,0 +1,38 @@
+---
+- hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Schedule changes
+      servicenow.itsm.change_request:
+        number: "{{ change_number }}"
+        state: scheduled
+        assignment_group: network
+
+    - name: Start implementing changes
+      servicenow.itsm.change_request:
+        number: "{{ change_number }}"
+        state: implement
+
+    - name: Simulate the fix
+      ansible.builtin.debug:
+        msg: Applying requested changes
+
+    - name: Put changes through review
+      servicenow.itsm.change_request:
+        number: "{{ change_number }}"
+        state: review
+
+    - name: Close change request
+      servicenow.itsm.change_request:
+        number: "{{ change_number }}"
+        state: closed
+        close_code: successful
+        close_notes: Testing production systems indicate that the fix worked.
+      register: change
+
+    - name: Close associated problem
+      servicenow.itsm.problem:
+        sys_id: "{{ change.record.parent }}"
+        state: closed
+        resolution_code: fix_applied

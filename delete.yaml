@@ -1,0 +1,24 @@
+---
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    inumber: INC0010014
+    pnumber: PRB0040010
+    cnumber: CHG0030022
+
+  tasks:
+    - name: Delete incident
+      servicenow.itsm.incident:
+        number: "{{ inumber }}"
+        state: absent
+
+    - name: Delete problem
+      servicenow.itsm.problem:
+        number: "{{ pnumber }}"
+        state: absent
+
+    - name: Delete change request
+      servicenow.itsm.change_request:
+        number: "{{ cnumber }}"
+        state: absent
