@@ -1,0 +1,17 @@
+---
+- hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Test install
+      debug:
+        msg: Hello
+
+    - name: Test snow collection
+      servicenow.itsm.incident_info:
+        number: INC0000057
+      register: result
+
+    - name: Display incident
+      ansible.builtin.debug:
+        var: result.records.0
