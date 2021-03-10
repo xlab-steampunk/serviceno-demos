@@ -1,0 +1,29 @@
+---
+- name: Setup IaaS
+  gather_facts: false
+  hosts: localhost
+
+  tasks:
+    - name: Launch EC2 instance
+      steampunk.aws.ec2_instance:
+        name: sensu
+        type: t3.micro
+        ami: ami-0e8286b71b81c3cc1
+        key_pair: demo_key
+        subnet: subnet-0782481a637096dfd
+        tags:
+          kind: sensu_backend
+      register: instance
+
+    - name: Register instance in ServiceNow
+      servicenow.itsm.configuration_item:
+        name: Demo EC2 instance
+        sys_class_name: cmdb_ci_ec2_instance
+        ip_address: "{{ instance.object.private_ip_address }}"
+        other:
+          vm_inst_id: "{{ instance.object.id }}"
+      register: item
+
+    - name: Display item
+      ansible.builtin.debug:
+        var: item.record
