@@ -1,0 +1,4 @@
+---
+plugin: servicenow.itsm.now
+
+table: cmdb_ci_ec2_instance
