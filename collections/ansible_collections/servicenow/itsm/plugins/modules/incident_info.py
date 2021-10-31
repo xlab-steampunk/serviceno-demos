@@ -16,6 +16,7 @@ author:
   - Manca Bizjak (@mancabizjak)
   - Miha Dolinar (@mdolin)
   - Tadej Borovsak (@tadeboro)
+  - Matej Pevec (@mysteriouswolf)
 short_description: List ServiceNow incidents
 description:
   - Retrieve information about ServiceNow incidents.
@@ -26,6 +27,7 @@ extends_documentation_fragment:
   - servicenow.itsm.instance
   - servicenow.itsm.sys_id.info
   - servicenow.itsm.number.info
+  - servicenow.itsm.query
 seealso:
   - module: servicenow.itsm.incident
 """
@@ -44,6 +46,20 @@ EXAMPLES = r"""
   servicenow.itsm.incident_info:
     number: INC0000039
   register: result
+
+- name: Retrieve all incidents that contain SAP in its short description
+  servicenow.itsm.incident_info:
+    query:
+      - short_description: LIKE SAP
+  register: result
+
+- name: Retrieve new incidents reported by abel.tuter or bertie.luby
+  servicenow.itsm.incident_info:
+    query:
+      - state: = new
+        caller: = abel.tuter
+      - state: = new
+        caller: = bertie.luby
 """
 
 RETURN = r"""
@@ -61,6 +77,28 @@ records:
       approval_set: ""
       assigned_to: 5137153cc611227c000bbd1bd8cd2007
       assignment_group: 8a4dde73c6112278017a6a4baf547aa7
+      "attachments":
+      -  "average_image_color": ""
+         "chunk_size_bytes": "700000"
+         "compressed": "true"
+         "content_type": "text/plain"
+         "download_link": "https://www.example.com/api/now/attachment/b7ad74d50706301022f9ffa08c1ed0ee/file"
+         "file_name": "sample_file1.txt"
+         "hash": "6f2b0dec698566114435a23f15dcac848a40e1fd3e0eda4afe24a663dda23f2e"
+         "image_height": ""
+         "image_width": ""
+         "size_bytes": "210"
+         "size_compressed": "206"
+         "state": "pending"
+         "sys_created_by": "admin"
+         "sys_created_on": "2021-08-17 11:19:24"
+         "sys_id": "b7ad74d50706301022f9ffa08c1ed0ee"
+         "sys_mod_count": "0"
+         "sys_tags": ""
+         "sys_updated_by": "admin"
+         "sys_updated_on": "2021-08-17 11:19:24"
+         "table_name": "incident"
+         "table_sys_id": "efad74d50706301022f9ffa08c1ed06d"
       business_duration: "1970-01-20 05:38:50"
       business_service: ""
       business_stc: "1661930"
@@ -146,16 +184,51 @@ records:
 
 from ansible.module_utils.basic import AnsibleModule
 
-from ..module_utils import arguments, client, errors, table, utils
+from ..module_utils import arguments, attachment, client, errors, query, table, utils
 from ..module_utils.incident import PAYLOAD_FIELDS_MAPPING
 
 
-def run(module, table_client):
-    query = utils.filter_dict(module.params, "sys_id", "number")
-    mapper = utils.PayloadMapper(PAYLOAD_FIELDS_MAPPING)
+def remap_caller(query, table_client):
+    query_load = []
+
+    for item in query:
+        q = dict()
+        for k, v in item.items():
+            if k == "caller":
+                user = table.find_user(table_client, v[1])
+                q["caller_id"] = (v[0], user["sys_id"])
+            else:
+                q[k] = v
+        query_load.append(q)
+
+    return query_load
+
+
+def sysparms_query(module, table_client, mapper):
+    parsed, err = query.parse_query(module.params["query"])
+    if err:
+        raise errors.ServiceNowError(err)
+
+    remap_query = remap_caller(parsed, table_client)
+
+    return query.serialize_query(query.map_query_values(remap_query, mapper))
+
+
+def run(module, table_client, attachment_client):
+    mapper = utils.PayloadMapper(PAYLOAD_FIELDS_MAPPING, module.warn)
+
+    if module.params["query"]:
+        query = {"sysparm_query": sysparms_query(module, table_client, mapper)}
+    else:
+        query = utils.filter_dict(module.params, "sys_id", "number")
 
     return [
-        mapper.to_ansible(record)
+        dict(
+            mapper.to_ansible(record),
+            attachments=attachment_client.list_records(
+                dict(table_name="incident", table_sys_id=record["sys_id"]),
+            )
+        )
         for record in table_client.list_records("incident", query)
     ]
 
@@ -164,14 +237,16 @@ def main():
     module = AnsibleModule(
         supports_check_mode=True,
         argument_spec=dict(
-            arguments.get_spec("instance", "sys_id", "number"),
+            arguments.get_spec("instance", "sys_id", "number", "query"),
         ),
+        mutually_exclusive=[("sys_id", "query"), ("number", "query")],
     )
 
     try:
         snow_client = client.Client(**module.params["instance"])
         table_client = table.TableClient(snow_client)
-        records = run(module, table_client)
+        attachment_client = attachment.AttachmentClient(snow_client)
+        records = run(module, table_client, attachment_client)
         module.exit_json(changed=False, records=records)
     except errors.ServiceNowError as e:
         module.fail_json(msg=str(e))

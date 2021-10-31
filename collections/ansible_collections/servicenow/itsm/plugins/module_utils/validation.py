@@ -15,7 +15,7 @@ from .errors import ServiceNowError
 def _assert_str_or_none(param, val):
     if not isinstance(val, (str, text_type, type(None))):
         raise ServiceNowError(
-            "Expected '{0}' to be text_type or None, got {1}".format(param, type(val))
+            "Expected '{0}' to be text or None, got {1}".format(param, type(val))
         )
 
 

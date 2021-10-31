@@ -44,7 +44,7 @@ class TestResponseInit:
         )
 
         assert resp.status == 200
-        assert resp.headers == {"Content-type": "applcation/json"}
+        assert resp.headers == {"content-type": "applcation/json"}
         assert resp.data == '{"a": ["b", "c"], "d": 1}'
         assert resp.json == {"a": ["b", "c"], "d": 1}
 
@@ -70,19 +70,33 @@ class TestResponseInit:
         assert json_mock.loads.call_count == 1
 
 
+class TestClientInit:
+    @pytest.mark.parametrize("host", [None, "", "invalid", "missing.schema"])
+    def test_invalid_host(self, host):
+        with pytest.raises(errors.ServiceNowError, match="Invalid instance host value"):
+            client.Client(host, "user", "pass")
+
+    @pytest.mark.parametrize("host", ["http://insecure.host", "https://secure.host"])
+    def test_valid_host(self, host):
+        client.Client(host, "user", "pass")
+
+
 class TestClientAuthHeader:
     def test_basic_auth(self):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         assert c.auth_header == {"Authorization": b"Basic dXNlcjpwYXNz"}
 
     def test_oauth(self, mocker):
-        resp_mock = mocker.MagicMock(status=200)
+        resp_mock = mocker.MagicMock()
+        resp_mock.status = 200  # Used when testing on Python 3
+        resp_mock.getcode.return_value = 200  # Used when testing on Python 2
         resp_mock.read.return_value = '{"access_token": "token"}'
+
         request_mock = mocker.patch.object(client, "Request").return_value
         request_mock.open.return_value = resp_mock
 
         c = client.Client(
-            "instance.com", "user", "pass", client_id="id", client_secret="secret"
+            "https://instance.com", "user", "pass", client_id="id", client_secret="secret"
         )
 
         assert c.auth_header == {"Authorization": "Bearer token"}
@@ -94,19 +108,22 @@ class TestClientAuthHeader:
         )
 
         c = client.Client(
-            "instance.com", "user", "pass", client_id="id", client_secret="secret"
+            "https://instance.com", "user", "pass", client_id="id", client_secret="secret"
         )
         with pytest.raises(errors.UnexpectedAPIResponse, match="Error message"):
             c.auth_header
 
     def test_header_is_cached(self, mocker):
-        raw_resp_mock = mocker.MagicMock(status=200)
+        raw_resp_mock = mocker.MagicMock()
+        raw_resp_mock.status = 200  # Used when testing on Python 3
+        raw_resp_mock.getcode.return_value = 200  # Used when testing on Python 2
         raw_resp_mock.read.return_value = '{"access_token": "token"}'
+
         request_mock = mocker.patch.object(client, "Request").return_value
         request_mock.open.return_value = raw_resp_mock
 
         c = client.Client(
-            "instance.com", "user", "pass", client_id="id", client_secret="secret"
+            "https://instance.com", "user", "pass", client_id="id", client_secret="secret"
         )
         c.auth_header
         c.auth_header
@@ -116,7 +133,7 @@ class TestClientAuthHeader:
 
 class TestClientRequest:
     def test_request_without_data_success(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(
             200, '{"returned": "data"}', headers=[("Content-type", "application/json")]
         )
@@ -127,14 +144,14 @@ class TestClientRequest:
 
         request_mock.assert_called_once_with(
             "GET",
-            "instance.com/api/now/some/path",
+            "https://instance.com/api/now/some/path",
             data=None,
             headers=dict(Accept="application/json", **c.auth_header),
         )
         assert resp == mock_response
 
     def test_request_with_data_success(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(
             200, '{"returned": "data"}', headers=[("Content-type", "application/json")]
         )
@@ -145,7 +162,7 @@ class TestClientRequest:
 
         request_mock.assert_called_once_with(
             "PUT",
-            "instance.com/api/now/some/path",
+            "https://instance.com/api/now/some/path",
             data='{"some":"data"}',
             headers={
                 "Accept": "application/json",
@@ -159,7 +176,7 @@ class TestClientRequest:
         request_mock = mocker.patch.object(client, "Request").return_value
         request_mock.open.side_effect = HTTPError("", 401, "Unauthorized", {}, None)
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         with pytest.raises(errors.AuthError):
             c.request("GET", "some/path")
 
@@ -169,7 +186,7 @@ class TestClientRequest:
             "", 404, "Not Found", {}, io.StringIO(to_text("My Error"))
         )
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         resp = c.request("GET", "some/path")
 
         assert resp.status == 404
@@ -180,7 +197,7 @@ class TestClientRequest:
         request_mock = mocker.patch.object(client, "Request").return_value
         request_mock.open.side_effect = URLError("some error")
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
 
         with pytest.raises(errors.ServiceNowError, match="some error"):
             c.request("GET", "some/path")
@@ -190,12 +207,12 @@ class TestClientRequest:
         raw_request = mocker.MagicMock(status=200)
         raw_request.read.return_value = "{}"
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         c.request("GET", "some path")
 
         request_mock.open.assert_called_once()
         path_arg = request_mock.open.call_args.args[1]
-        assert path_arg == "instance.com/api/now/some%20path"
+        assert path_arg == "https://instance.com/api/now/some%20path"
 
     @pytest.mark.parametrize("query", [None, {}])
     def test_path_without_query(self, mocker, query):
@@ -203,12 +220,12 @@ class TestClientRequest:
         raw_request = mocker.MagicMock(status=200)
         raw_request.read.return_value = "{}"
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         c.request("GET", "some/path", query=query)
 
         request_mock.open.assert_called_once()
         path_arg = request_mock.open.call_args.args[1]
-        assert path_arg == "instance.com/api/now/some/path"
+        assert path_arg == "https://instance.com/api/now/some/path"
 
     @pytest.mark.parametrize(
         "query",
@@ -223,7 +240,7 @@ class TestClientRequest:
         raw_request = mocker.MagicMock(status=200)
         raw_request.read.return_value = "{}"
 
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         c.request("GET", "some/path", query=query)
 
         request_mock.open.assert_called_once()
@@ -231,10 +248,61 @@ class TestClientRequest:
         parsed_query = parse_qs(urlparse(path_arg).query)
         assert parsed_query == dict((k, [str(v)]) for k, v in query.items())
 
+    def test_request_without_data_binary_success(self, mocker):
+        c = client.Client("https://instance.com", "user", "pass")
+        mock_response = client.Response(
+            200, "data", headers=[("Content-type", "image/apng")]
+        )
+        request_mock = mocker.patch.object(c, "_request")
+        request_mock.return_value = mock_response
+
+        resp = c.request(
+            "GET",
+            "some/path",
+            headers={"Accept": "image/apng", "Content-type": "text/plain"},
+        )
+
+        request_mock.assert_called_once_with(
+            "GET",
+            "https://instance.com/api/now/some/path",
+            data=None,
+            headers=dict(
+                {"Accept": "image/apng", "Content-type": "text/plain"}, **c.auth_header
+            ),
+        )
+        assert resp == mock_response
+
+    def test_request_with_data_binary_success(self, mocker):
+        c = client.Client("https://instance.com", "user", "pass")
+        mock_response = client.Response(
+            200, "some_data", headers=[("Content-type", "text/plain")]
+        )
+        request_mock = mocker.patch.object(c, "_request")
+        request_mock.return_value = mock_response
+
+        resp = c.request(
+            "PUT",
+            "some/path",
+            headers={"Accept": "text/plain", "Content-type": "text/plain"},
+            bytes="some_data",
+        )
+
+        request_mock.assert_called_once_with(
+            "PUT",
+            "https://instance.com/api/now/some/path",
+            data="some_data",
+            headers={
+                "Accept": "text/plain",
+                "Content-type": "text/plain",
+                "Authorization": c.auth_header["Authorization"],
+            },
+        )
+        assert resp == mock_response
+
 
 class TestClientGet:
     def test_ok(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(200, '{"incident": 1}', None)
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = mock_response
@@ -245,7 +313,7 @@ class TestClientGet:
         assert resp.json == {"incident": 1}
 
     def test_ok_missing(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(404, "Not Found", None)
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = mock_response
@@ -255,7 +323,7 @@ class TestClientGet:
         assert resp == mock_response
 
     def test_error(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(403, "forbidden")
 
@@ -263,7 +331,7 @@ class TestClientGet:
             c.get("table/incident/1")
 
     def test_query(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(200, '{"incident": 1}', None)
 
@@ -274,7 +342,7 @@ class TestClientGet:
 
 class TestClientPost:
     def test_ok(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(201, '{"incident": 1}')
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = mock_response
@@ -285,7 +353,7 @@ class TestClientPost:
         assert resp.json == {"incident": 1}
 
     def test_error(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(400, "bad request")
 
@@ -293,7 +361,7 @@ class TestClientPost:
             c.post("table/incident", {"some": "data"})
 
     def test_query(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(201, '{"incident": 1}')
 
@@ -306,7 +374,7 @@ class TestClientPost:
 
 class TestClientPatch:
     def test_ok(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(200, '{"incident": 1}')
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = mock_response
@@ -317,7 +385,7 @@ class TestClientPatch:
         assert resp.json == {"incident": 1}
 
     def test_error(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(400, "bad request")
 
@@ -325,7 +393,7 @@ class TestClientPatch:
             c.patch("table/incident/1", {"some": "data"})
 
     def test_query(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(200, '{"incident": 1}')
 
@@ -338,7 +406,7 @@ class TestClientPatch:
 
 class TestClientPut:
     def test_ok(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         mock_response = client.Response(200, '{"incident": 1}')
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = mock_response
@@ -349,7 +417,7 @@ class TestClientPut:
         assert resp.json == {"incident": 1}
 
     def test_error(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(400, "bad request")
 
@@ -357,7 +425,7 @@ class TestClientPut:
             c.put("table/incident/1", {"some": "data"})
 
     def test_query(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(200, '{"incident": 1}')
 
@@ -370,14 +438,14 @@ class TestClientPut:
 
 class TestClientDelete:
     def test_ok(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(204, {})
 
         c.delete("table/resource/1")
 
     def test_error(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(404, "not found")
 
@@ -385,7 +453,7 @@ class TestClientDelete:
             c.delete("table/resource/1")
 
     def test_query(self, mocker):
-        c = client.Client("instance.com", "user", "pass")
+        c = client.Client("https://instance.com", "user", "pass")
         request_mock = mocker.patch.object(c, "request")
         request_mock.return_value = client.Response(204, {})
 

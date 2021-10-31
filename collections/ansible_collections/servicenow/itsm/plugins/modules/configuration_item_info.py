@@ -17,6 +17,7 @@ author:
   - Manca Bizjak (@mancabizjak)
   - Miha Dolinar (@mdolin)
   - Tadej Borovsak (@tadeboro)
+  - Matej Pevec (@mysteriouswolf)
 
 short_description: List ServiceNow configuration item
 
@@ -24,10 +25,11 @@ description:
   - Retrieve information about ServiceNow configuration item.
   - For more information, refer to the ServiceNow configuration item management documentation at
     U(https://docs.servicenow.com/bundle/quebec-servicenow-platform/page/product/configuration-management/concept/c_ITILConfigurationManagement.html).
-
+version_added: 1.0.0
 extends_documentation_fragment:
   - servicenow.itsm.instance
   - servicenow.itsm.sys_id.info
+  - servicenow.itsm.query
 
 seealso:
   - module: servicenow.itsm.configuration_item
@@ -54,6 +56,20 @@ EXAMPLES = r"""
   servicenow.itsm.configuration_item_info:
     sys_id: 01a9ec0d3790200044e0bfc8bcbe5dc3
   register: result
+
+- name: Retrieve all hardare configuration items
+  servicenow.itsm.configuration_item_info:
+    query:
+      - category: = Hardware
+  register: result
+
+- name: Retrieve configuration items in hardware category assigned to abel.tuter or bertie.luby
+  servicenow.itsm.configuration_item_info:
+    query:
+      - category: = hardware
+        assigned_to: = abel.tuter
+      - category: = hardware
+        assigned_to: = bertie.luby
 """
 
 RETURN = r"""
@@ -70,6 +86,28 @@ record:
     "assigned": "2019-02-28 08:00:00"
     "assigned_to": "8a826bf03710200044e0bfc8bcbe5d96"
     "assignment_group": ""
+    "attachments":
+      -  "average_image_color": ""
+         "chunk_size_bytes": "700000"
+         "compressed": "true"
+         "content_type": "text/plain"
+         "download_link": "https://www.example.com/api/now/attachment/919d34d50706301022f9ffa08c1ed047/file"
+         "file_name": "sample_file1.txt"
+         "hash": "6f2b0dec698566114435a23f15dcac848a40e1fd3e0eda4afe24a663dda23f2e"
+         "image_height": ""
+         "image_width": ""
+         "size_bytes": "210"
+         "size_compressed": "206"
+         "state": "pending"
+         "sys_created_by": "admin"
+         "sys_created_on": "2021-08-17 11:18:58"
+         "sys_id": "919d34d50706301022f9ffa08c1ed047"
+         "sys_mod_count": "0"
+         "sys_tags": ""
+         "sys_updated_by": "admin"
+         "sys_updated_on": "2021-08-17 11:18:58"
+         "table_name": "cmdb_ci"
+         "table_sys_id": "459d34d50706301022f9ffa08c1ed06a"
     "attestation_score": ""
     "attested": "false"
     "attested_by": ""
@@ -149,17 +187,52 @@ record:
 
 from ansible.module_utils.basic import AnsibleModule
 
-from ..module_utils import arguments, client, errors, table, utils
+from ..module_utils import arguments, attachment, client, errors, query, table, utils
 from ..module_utils.configuration_item import PAYLOAD_FIELDS_MAPPING
 
 
-def run(module, table_client):
-    query = utils.filter_dict(module.params, "sys_id")
+def remap_assignment(query, table_client):
+    query_load = []
+
+    for item in query:
+        q = dict()
+        for k, v in item.items():
+            if k == "assigned_to":
+                user = table.find_user(table_client, v[1])
+                q["assigned_to"] = (v[0], user["sys_id"])
+            else:
+                q[k] = v
+        query_load.append(q)
+
+    return query_load
+
+
+def sysparms_query(module, table_client, mapper):
+    parsed, err = query.parse_query(module.params["query"])
+    if err:
+        raise errors.ServiceNowError(err)
+
+    remap_query = remap_assignment(parsed, table_client)
+
+    return query.serialize_query(query.map_query_values(remap_query, mapper))
+
+
+def run(module, table_client, attachment_client):
     cmdb_table = module.params["sys_class_name"] or "cmdb_ci"
-    mapper = utils.PayloadMapper(PAYLOAD_FIELDS_MAPPING)
+    mapper = utils.PayloadMapper(PAYLOAD_FIELDS_MAPPING, module.warn)
+
+    if module.params["query"]:
+        query = {"sysparm_query": sysparms_query(module, table_client, mapper)}
+    else:
+        query = utils.filter_dict(module.params, "sys_id")
 
     return [
-        mapper.to_ansible(record)
+        dict(
+            mapper.to_ansible(record),
+            attachments=attachment_client.list_records(
+                dict(table_name=cmdb_table, table_sys_id=record["sys_id"]),
+            )
+        )
         for record in table_client.list_records(cmdb_table, query)
     ]
 
@@ -168,17 +241,19 @@ def main():
     module = AnsibleModule(
         supports_check_mode=True,
         argument_spec=dict(
-            arguments.get_spec("instance", "sys_id"),
+            arguments.get_spec("instance", "sys_id", "query"),
             sys_class_name=dict(
                 type="str",
             ),
         ),
+        mutually_exclusive=[("sys_id", "query")],
     )
 
     try:
         snow_client = client.Client(**module.params["instance"])
         table_client = table.TableClient(snow_client)
-        records = run(module, table_client)
+        attachment_client = attachment.AttachmentClient(snow_client)
+        records = run(module, table_client, attachment_client)
         module.exit_json(changed=False, records=records)
     except errors.ServiceNowError as e:
         module.fail_json(msg=str(e))

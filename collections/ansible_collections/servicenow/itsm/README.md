@@ -19,20 +19,23 @@ This collection requires Python 2.7 or greater.
 ## Included content
 
 <!--start collection content-->
+### Inventory plugins
+Name | Description
+--- | ---
+[servicenow.itsm.servicenow.itsm.now](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.servicenow.itsm.now_inventory.rst)|Inventory source for ServiceNow table records.
+
 ### Modules
 Name | Description
 --- | ---
 [servicenow.itsm.change_request](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.change_request_module.rst)|Manage ServiceNow change requests
 [servicenow.itsm.change_request_info](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.change_request_info_module.rst)|List ServiceNow change requests
+[servicenow.itsm.configuration_item](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.configuration_item_module.rst)|Manage ServiceNow configuration items
+[servicenow.itsm.configuration_item_batch](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.configuration_item_batch_module.rst)|Manage ServiceNow configuration items
+[servicenow.itsm.configuration_item_info](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.configuration_item_info_module.rst)|List ServiceNow configuration item
 [servicenow.itsm.incident](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.incident_module.rst)|Manage ServiceNow incidents
 [servicenow.itsm.incident_info](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.incident_info_module.rst)|List ServiceNow incidents
 [servicenow.itsm.problem](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.problem_module.rst)|Manage ServiceNow problems
 [servicenow.itsm.problem_info](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.problem_info_module.rst)|List ServiceNow problems
-
-### Inventory plugins
-Name | Description
---- | ---
-[servicenow.itsm.servicenow.itsm.now](https://github.com/ansible-collections/servicenow.itsm/blob/main/docs/servicenow.itsm.servicenow.itsm.now_inventory.rst)|Inventory source for ServiceNow table records.
 
 <!--end collection content-->
 
@@ -69,7 +72,7 @@ We welcome community contributions to this collection. If you find problems, ple
 
 You can also join us on:
 
-- Freenode IRC - ``#ansible-devel`` Freenode channel
+- IRC - the ``#ansible-community`` [irc.libera.chat](https://libera.chat/) channel
 
 See the [Ansible Community Guide](https://docs.ansible.com/ansible/latest/community/index.html) for details on contributing to Ansible.
 

@@ -17,12 +17,15 @@ from ansible.module_utils.urls import Request, basic_auth_header
 from .errors import ServiceNowError, AuthError, UnexpectedAPIResponse
 
 
+DEFAULT_HEADERS = dict(Accept="application/json")
+
+
 class Response:
     def __init__(self, status, data, headers=None):
         self.status = status
         self.data = data
-        # [('h1', 'v1'), ('h2', 'v2')] -> {'h1': 'v1', 'h2': 'v2'}
-        self.headers = dict(headers) if headers else {}
+        # [('h1', 'v1'), ('H2', 'V2')] -> {'h1': 'v1', 'h2': 'V2'}
+        self.headers = dict((k.lower(), v) for k, v in dict(headers).items()) if headers else {}
 
         self._json = None
 
@@ -40,13 +43,20 @@ class Response:
 
 class Client:
     def __init__(
-        self, host, username, password, client_id=None, client_secret=None, timeout=None
+        self, host, username=None, password=None, grant_type=None,
+        refresh_token=None, client_id=None, client_secret=None, timeout=None
     ):
+        if not (host or "").startswith(('https://', 'http://')):
+            raise ServiceNowError("Invalid instance host value: '{0}'. "
+                                  "Value must start with 'https://' or 'http://'".format(host))
+
         self.host = host
         self.username = username
         self.password = password
+        self.grant_type = grant_type
         self.client_id = client_id
         self.client_secret = client_secret
+        self.refresh_token = refresh_token
         self.timeout = timeout
 
         self._auth_header = None
@@ -67,15 +77,26 @@ class Client:
         return dict(Authorization=basic_auth_header(self.username, self.password))
 
     def _login_oauth(self):
-        auth_data = urlencode(
-            dict(
-                grant_type="password",
-                username=self.username,
-                password=self.password,
-                client_id=self.client_id,
-                client_secret=self.client_secret,
+        if self.grant_type == 'refresh_token':
+            auth_data = urlencode(
+                dict(
+                    grant_type=self.grant_type,
+                    refresh_token=self.refresh_token,
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                )
             )
-        )
+        # Only other possible value for grant_type is "password"
+        else:
+            auth_data = urlencode(
+                dict(
+                    grant_type=self.grant_type,
+                    username=self.username,
+                    password=self.password,
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                )
+            )
         resp = self._request(
             "POST",
             "{0}/oauth_token.do".format(self.host),
@@ -111,15 +132,23 @@ class Client:
             return Response(raw_resp.getcode(), raw_resp.read(), raw_resp.info())
         return Response(raw_resp.status, raw_resp.read(), raw_resp.headers)
 
-    def request(self, method, path, query=None, data=None):
+    def request(self, method, path, query=None, data=None, headers=None, bytes=None):
+        # Make sure we only have one kind of payload
+        if data is not None and bytes is not None:
+            raise AssertionError(
+                "Cannot have JSON and binary payload in a single request."
+            )
+
         escaped_path = quote(path.rstrip("/"))
         url = "{0}/api/now/{1}".format(self.host, escaped_path)
         if query:
             url = "{0}?{1}".format(url, urlencode(query))
-        headers = dict(Accept="application/json", **self.auth_header)
+        headers = dict(headers or DEFAULT_HEADERS, **self.auth_header)
         if data is not None:
             data = json.dumps(data, separators=(",", ":"))
             headers["Content-type"] = "application/json"
+        elif bytes is not None:
+            data = bytes
         return self._request(method, url, data=data, headers=headers)
 
     def get(self, path, query=None):
